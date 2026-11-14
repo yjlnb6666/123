@@ -93,8 +93,7 @@ fun AppRoot(activity: Activity) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                pageSpacing = 0.dp,
-                beyondViewportPageCount = 1
+                pageSpacing = 0.dp
             ) { page ->
                 Box(Modifier.fillMaxSize().padding(bottom = 84.dp)) {
                     when (page) {
