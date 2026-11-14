@@ -19,10 +19,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FolderZip
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -76,6 +79,16 @@ fun FileBrowserScreen(hasRoot: Boolean) {
 
     var previewName by remember { mutableStateOf<String?>(null) }
     var previewText by remember { mutableStateOf("") }
+
+    // 脚本执行确认 / 结果
+    var pendingScript by remember { mutableStateOf<FileEntry?>(null) }
+    var runningScript by remember { mutableStateOf(false) }
+    var scriptResult by remember { mutableStateOf<String?>(null) }
+
+    // APK 安装确认 / 结果
+    var pendingApk by remember { mutableStateOf<FileEntry?>(null) }
+    var installing by remember { mutableStateOf(false) }
+    var installResult by remember { mutableStateOf<String?>(null) }
 
     fun load(path: String) {
         if (!hasRoot) {
@@ -209,26 +222,198 @@ fun FileBrowserScreen(hasRoot: Boolean) {
                             onClick = {
                                 if (entry.isDirectory) {
                                     load(entry.path)
-                                } else {
-                                    previewName = entry.name
-                                    previewText = "读取中…"
-                                    scope.launch {
-                                        val c = withContext(Dispatchers.IO) {
-                                            FileBrowser.readFile(entry.path)
+                                    return@FileRow
+                                }
+                                when (FileBrowser.kindOf(entry)) {
+                                    FileBrowser.Kind.SCRIPT -> pendingScript = entry
+                                    FileBrowser.Kind.APK -> pendingApk = entry
+                                    FileBrowser.Kind.ZIP -> {
+                                        previewName = "${entry.name}  (压缩包内容)"
+                                        previewText = "读取中…"
+                                        scope.launch {
+                                            val r = withContext(Dispatchers.IO) {
+                                                FileBrowser.listZip(entry.path)
+                                            }
+                                            previewText = r.getOrElse { "❌ ${it.message}" }
                                         }
-                                        previewText = when {
-                                            c.isEmpty() -> "（空文件或无法读取）"
-                                            FileBrowser.looksBinary(c) -> "（二进制文件，不预览）"
-                                            else -> c
+                                    }
+                                    else -> {
+                                        previewName = entry.name
+                                        previewText = "读取中…"
+                                        scope.launch {
+                                            val c = withContext(Dispatchers.IO) {
+                                                FileBrowser.readFile(entry.path)
+                                            }
+                                            previewText = when {
+                                                c.isEmpty() -> "（空文件或无法读取）"
+                                                FileBrowser.looksBinary(c) -> "（二进制文件，不预览）"
+                                                else -> c
+                                            }
                                         }
                                     }
                                 }
-                            }
+                            },
+                            onRun = if (FileBrowser.kindOf(entry) == FileBrowser.Kind.SCRIPT)
+                                ({ pendingScript = entry }) else null,
+                            onInstall = if (FileBrowser.kindOf(entry) == FileBrowser.Kind.APK)
+                                ({ pendingApk = entry }) else null
                         )
                     }
                 }
             }
         }
+    }
+
+    // ===== 脚本执行确认 =====
+    pendingScript?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!runningScript) pendingScript = null },
+            title = { Text("执行脚本") },
+            text = {
+                Column {
+                    Text(target.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(target.path, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextMuted)
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "将以 root 权限执行此脚本。",
+                        color = Color(0xFFFFD180),
+                        fontSize = 12.sp
+                    )
+                    if (runningScript) {
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = accent,
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("执行中…", color = accent, fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !runningScript,
+                    onClick = {
+                        runningScript = true
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                FileBrowser.execScript(target.path)
+                            }
+                            runningScript = false
+                            pendingScript = null
+                            scriptResult = r.getOrElse { "❌ ${it.message}" }
+                        }
+                    }
+                ) { Text(if (runningScript) "请稍候" else "执行", color = Color(0xFF7CE38B)) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !runningScript,
+                    onClick = { pendingScript = null }
+                ) { Text("取消") }
+            }
+        )
+    }
+
+    // ===== 脚本执行结果 =====
+    scriptResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { scriptResult = null },
+            title = { Text("执行结果") },
+            text = {
+                Text(
+                    result,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { scriptResult = null }) { Text("关闭") }
+            }
+        )
+    }
+
+    // ===== APK 安装确认 =====
+    pendingApk?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!installing) pendingApk = null },
+            title = { Text("安装应用") },
+            text = {
+                Column {
+                    Text(target.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        FileBrowser.formatSize(target.size),
+                        fontSize = 11.sp,
+                        color = TextMuted
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "将通过 root 静默安装（-r 覆盖 -d 允许降级）。",
+                        color = Color(0xFF7CD4E3),
+                        fontSize = 12.sp
+                    )
+                    if (installing) {
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = accent,
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("安装中…", color = accent, fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !installing,
+                    onClick = {
+                        installing = true
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                FileBrowser.installApk(target.path)
+                            }
+                            installing = false
+                            pendingApk = null
+                            installResult = r.getOrElse { "❌ ${it.message}" }
+                        }
+                    }
+                ) { Text(if (installing) "请稍候" else "安装", color = Color(0xFF7CD4E3)) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !installing,
+                    onClick = { pendingApk = null }
+                ) { Text("取消") }
+            }
+        )
+    }
+
+    // ===== APK 安装结果 =====
+    installResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { installResult = null },
+            title = { Text("安装结果") },
+            text = {
+                Text(
+                    result,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { installResult = null }) { Text("关闭") }
+            }
+        )
     }
 
     previewName?.let { name ->
@@ -254,17 +439,32 @@ fun FileBrowserScreen(hasRoot: Boolean) {
 private fun FileRow(
     entry: FileEntry,
     accent: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onRun: (() -> Unit)? = null,
+    onInstall: (() -> Unit)? = null
 ) {
+    val kind = com.kernelsu.mgr.data.FileBrowser.kindOf(entry)
     GlassCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().clickable { onClick() },
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                if (entry.isDirectory) Icons.Filled.Folder else Icons.Filled.Description,
+                when {
+                    entry.isDirectory -> Icons.Filled.Folder
+                    kind == com.kernelsu.mgr.data.FileBrowser.Kind.SCRIPT -> Icons.Filled.PlayArrow
+                    kind == com.kernelsu.mgr.data.FileBrowser.Kind.APK -> Icons.Filled.Android
+                    kind == com.kernelsu.mgr.data.FileBrowser.Kind.ZIP -> Icons.Filled.FolderZip
+                    else -> Icons.Filled.Description
+                },
                 contentDescription = null,
-                tint = if (entry.isDirectory) accent else StatusGreenIcon,
+                tint = when {
+                    entry.isDirectory -> accent
+                    kind == com.kernelsu.mgr.data.FileBrowser.Kind.SCRIPT -> Color(0xFF7CE38B)
+                    kind == com.kernelsu.mgr.data.FileBrowser.Kind.APK -> Color(0xFF7CD4E3)
+                    kind == com.kernelsu.mgr.data.FileBrowser.Kind.ZIP -> Color(0xFFE3C77C)
+                    else -> StatusGreenIcon
+                },
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.width(12.dp))
@@ -281,7 +481,7 @@ private fun FileRow(
                         entry.permissions,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = if (entry.isDirectory) Color(0xFF8AB4F8) else Color(0xFF9AA7BC)
+                        color = if (entry.permissions.startsWith("d")) Color(0xFF8AB4F8) else Color(0xFF9AA7BC)
                     )
                     if (!entry.isDirectory) {
                         Spacer(Modifier.width(10.dp))
@@ -291,6 +491,31 @@ private fun FileRow(
                             color = Color(0xFF9AA7BC)
                         )
                     }
+                }
+            }
+
+            // 脚本：执行按钮
+            if (onRun != null) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0x447CE38B))
+                        .clickable { onRun() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text("执行", color = Color(0xFFB6FFC4), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            // APK：安装按钮
+            if (onInstall != null) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0x447CD4E3))
+                        .clickable { onInstall() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text("安装", color = Color(0xFFB6EEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

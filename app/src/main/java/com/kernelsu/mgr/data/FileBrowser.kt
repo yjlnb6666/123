@@ -122,8 +122,112 @@ object FileBrowser {
     private fun shellQuote(s: String): String =
         "'" + s.replace("'", "'\\''") + "'"
 
+    // ================= 文件类型识别 =================
+
+    enum class Kind { SCRIPT, APK, ZIP, TEXT, BINARY, OTHER }
+
+    fun kindOf(entry: FileEntry): Kind {
+        if (entry.isDirectory) return Kind.OTHER
+        val n = entry.name.lowercase()
+        return when {
+            n.endsWith(".sh") || n.endsWith(".bash") || n.endsWith(".zsh") -> Kind.SCRIPT
+            n.endsWith(".apk") || n.endsWith(".apks") || n.endsWith(".xapk") -> Kind.APK
+            n.endsWith(".zip") || n.endsWith(".jar") || n.endsWith(".7z") -> Kind.ZIP
+            n.endsWith(".txt") || n.endsWith(".conf") || n.endsWith(".cfg") ||
+                n.endsWith(".prop") || n.endsWith(".json") || n.endsWith(".xml") ||
+                n.endsWith(".ini") || n.endsWith(".log") || n.endsWith(".md") ||
+                n.endsWith(".yaml") || n.endsWith(".yml") || n.endsWith(".csv") -> Kind.TEXT
+            // 无扩展名但可执行：当作脚本
+            !n.contains('.') && entry.permissions.contains("x") -> Kind.SCRIPT
+            else -> Kind.BINARY
+        }
+    }
+
+    // ================= 执行脚本 =================
+
+    /**
+     * 以 root 直接执行脚本（不做安全扫描，按用户要求）。
+     * 先 chmod +x，再用 sh 执行，避免 "Permission denied" / 无 shebang。
+     */
+    fun execScript(path: String, timeoutSec: Long = 90): Result<String> {
+        val q = shellQuote(path)
+        // 优先直接用解释器跑（不依赖可执行位），并注入常用环境变量
+        val cmd = "cd /data/adb/JN 2>/dev/null; " +
+                "export PATH=/system/bin:/system/xbin:/data/adb/ksu/bin:\$PATH; " +
+                "chmod 755 $q 2>/dev/null; " +
+                "sh $q 2>&1; echo \"__EXIT_CODE__\$?\""
+        val raw = runRoot(cmd, timeoutSec)
+        if (raw.isBlank()) {
+            return Result.failure(Exception("脚本无输出（可能执行失败或被杀）"))
+        }
+        val exitCode = Regex("""__EXIT_CODE__(\d+)""").find(raw)?.groupValues?.get(1) ?: "?"
+        val body = raw.replace(Regex("""__EXIT_CODE__\d+\s*"""), "").trimEnd()
+        return Result.success(
+            buildString {
+                append("退出码：").append(exitCode).append("\n")
+                append("────────────\n")
+                append(body.ifBlank { "（无输出）" })
+            }
+        )
+    }
+
+    // ================= 安装 APK =================
+
+    /**
+     * 用 root 安装 APK。
+     *
+     * 关键：pm install 读不到 /data/adb（SELinux 限制），
+     * 所以先复制到 /data/local/tmp 再安装，完成后清理。
+     */
+    fun installApk(path: String): Result<String> {
+        val q = shellQuote(path)
+        val tmp = "/data/local/tmp/_inst_" + System.currentTimeMillis() + ".apk"
+        val cmd = buildString {
+            append("cp -f $q ").append(shellQuote(tmp)).append(" 2>&1 || { echo COPY_FAILED; exit 1; }\n")
+            append("chmod 644 ").append(shellQuote(tmp)).append("\n")
+            append("pm install -r -d ").append(shellQuote(tmp)).append(" 2>&1\n")
+            append("RC=\$?\n")
+            append("rm -f ").append(shellQuote(tmp)).append("\n")
+            append("echo \"__RC__\$RC\"\n")
+        }
+        val raw = runRoot(cmd, 180)
+        if (raw.isBlank()) return Result.failure(Exception("安装无响应"))
+        if (raw.contains("COPY_FAILED")) {
+            return Result.failure(Exception("复制 APK 失败（无法读取源文件）"))
+        }
+        val rc = Regex("""__RC__(\d+)""").find(raw)?.groupValues?.get(1)
+        val body = raw.replace(Regex("""__RC__\d+\s*"""), "").trim()
+        return if (raw.contains("Success", ignoreCase = true)) {
+            Result.success("✅ 安装成功\n\n$body")
+        } else {
+            Result.failure(Exception(body.ifBlank { "安装失败（rc=$rc）" }))
+        }
+    }
+
+    // ================= ZIP 预览（不解压） =================
+
+    /**
+     * 列出 zip 内文件，不解压到磁盘。
+     * 优先 unzip -l；没有 unzip 时退化用 toybox 的 unzip / busybox。
+     */
+    fun listZip(path: String): Result<String> {
+        val q = shellQuote(path)
+        val cmd = "unzip -l $q 2>&1 || busybox unzip -l $q 2>&1 || echo '__NO_UNZIP__'"
+        val raw = runRoot(cmd, 30)
+        if (raw.isBlank() || raw.contains("__NO_UNZIP__")) {
+            // 退化：用 KSU 自带 busybox
+            val alt = "/data/adb/ksu/bin/busybox unzip -l $q 2>&1"
+            val r2 = runRoot(alt, 30)
+            if (r2.isBlank()) {
+                return Result.failure(Exception("缺少 unzip 工具，无法预览该压缩包"))
+            }
+            return Result.success(r2)
+        }
+        return Result.success(raw)
+    }
+
     /** 通过 su 执行命令并收集输出 */
-    private fun runRoot(cmd: String): String {
+    private fun runRoot(cmd: String, timeoutSec: Long = 15): String {
         return try {
             val p = ProcessBuilder("su", "-c", cmd)
                 .redirectErrorStream(true)
@@ -135,7 +239,7 @@ object FileBrowser {
                 }
             }
             t.start()
-            val ok = p.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)
+            val ok = p.waitFor(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
             if (!ok) { p.destroyForcibly() }
             t.join(1500)
             sb.toString()
