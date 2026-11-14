@@ -193,53 +193,7 @@ fun LiquidGlassNavBar(
                 }
             }
 
-            // 拖动层（最上层，但只在水平滑动时才消费事件 → 不影响点击）
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-                    .pointerInput(count, slotWidth) {
-                        val slotPx = with(density) { slotWidth.toPx() }
-                        if (slotPx <= 0f) return@pointerInput
-                        var startPos = 0f
-                        var acc = 0f
-                        var isDrag = false
-                        awaitPointerEventScope {
-                            while (true) {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                startPos = selectedIndex.toFloat()
-                                acc = 0f
-                                isDrag = false
-                                dragging = -1f
-
-                                var done = false
-                                while (!done) {
-                                    val ev = awaitPointerEvent()
-                                    val ch = ev.changes.firstOrNull { it.id == down.id }
-                                    if (ch == null) { done = true; break }
-
-                                    if (!ch.pressed) {
-                                        if (isDrag) {
-                                            val t = (if (dragging < 0f) startPos else dragging)
-                                                .roundToInt().coerceIn(0, count - 1)
-                                            dragging = -1f
-                                            if (t != selectedIndex) onSelect(t)
-                                        }
-                                        done = true
-                                    } else {
-                                        acc += ch.position.x - ch.previousPosition.x
-                                        if (!isDrag && kotlin.math.abs(acc) > 16f) isDrag = true
-                                        if (isDrag) {
-                                            dragging = (startPos + acc / slotPx)
-                                                .coerceIn(0f, (count - 1).toFloat())
-                                            ch.consume()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-            )
+            // 拖动层已移除（避免与点击冲突）。当前版本专注保证点击可靠。
         }
     }
 }
