@@ -61,7 +61,19 @@ jobs:
             echo "=== proot build FAILED (ok, fallback sandbox 仍可用) ==="
           fi
 
+      - name: Restore keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > $RUNNER_TEMP/shaoyu.keystore
+          ls -la $RUNNER_TEMP/shaoyu.keystore
+
       - name: Build Debug APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/shaoyu.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Show APK output
