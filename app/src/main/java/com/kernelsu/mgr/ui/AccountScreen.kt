@@ -111,7 +111,7 @@ fun AccountScreen(
                                         shape = CircleShape
                                     )
                                     .clickable {
-                                        AppSettings.setBg(index)
+                                        AppSettings.applyBg(index)
                                         onSettingsChanged()
                                     },
                                 contentAlignment = Alignment.Center
@@ -155,7 +155,7 @@ fun AccountScreen(
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .clickable {
-                                    AppSettings.setCustomBg(colors[0], colors[1])
+                                    AppSettings.applyCustomBg(colors[0], colors[1])
                                     onSettingsChanged()
                                 }
                         )
@@ -185,7 +185,7 @@ fun AccountScreen(
                                     shape = CircleShape
                                 )
                                 .clickable {
-                                    AppSettings.setAccent(index)
+                                    AppSettings.applyAccent(index)
                                     onSettingsChanged()
                                 },
                             contentAlignment = Alignment.Center
@@ -220,7 +220,7 @@ fun AccountScreen(
                                     shape = CircleShape
                                 )
                                 .clickable {
-                                    AppSettings.setCustomAccent(color)
+                                    AppSettings.applyCustomAccent(color)
                                     onSettingsChanged()
                                 }
                         )
@@ -253,7 +253,7 @@ fun AccountScreen(
                 }
                 Slider(
                     value = AppSettings.animScale,
-                    onValueChange = { AppSettings.setAnimScale(it) },
+                    onValueChange = { AppSettings.applyAnimScale(it) },
                     onValueChangeFinished = { onSettingsChanged() },
                     valueRange = 0f..1.5f,
                     steps = 5,
