@@ -12,7 +12,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,20 +30,20 @@ jobs:
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk ShaoyuNB.apk
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: ShaoyuNB Build ${{ github.run_number }}
-          body: 自动构建 APK
-          files: ShaoyuNB.apk
+      - name: Show APK output
+        run: ls -lh app/build/outputs/apk/debug/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ShaoyuNB-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          files: app/build/outputs/apk/debug/*.apk
+          draft: false
+          prerelease: false

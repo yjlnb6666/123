@@ -1,5 +1,7 @@
 package com.kernelsu.mgr.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +29,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -57,11 +61,26 @@ fun DeviceScreen(hasRoot: Boolean) {
         Text("少羽牛逼", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(Modifier.height(16.dp))
 
-        // 状态卡片（KSU 风格）
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = if (hasRoot) StatusGreenBg else Color(0xFFFFE0E0)
+        // 状态卡片（KSU 风格，绿色改为半透明玻璃质感）
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    if (hasRoot) Brush.verticalGradient(
+                        listOf(Color(0x59D6F5D6), Color(0x2ED6F5D6))
+                    ) else Brush.verticalGradient(
+                        listOf(Color(0x4DFFE0E0), Color(0x26FFE0E0))
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        if (hasRoot) listOf(Color(0x99FFFFFF), Color(0x4D35C759))
+                        else listOf(Color(0x99FFFFFF), Color(0x4DE57373))
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                )
         ) {
             Row(
                 modifier = Modifier.padding(20.dp),
@@ -75,9 +94,17 @@ fun DeviceScreen(hasRoot: Boolean) {
                         color = if (hasRoot) StatusGreenText else Color(0xFFB71C1C)
                     )
                     Spacer(Modifier.height(6.dp))
-                    Text("版本：32680-5", fontSize = 14.sp, color = Color(0xFF444444))
+                    Text(
+                        "版本：32680-5",
+                        fontSize = 14.sp,
+                        color = if (hasRoot) Color(0xFF3C5A3C) else Color(0xFF7A4444)
+                    )
                     Spacer(Modifier.height(6.dp))
-                    Text("LKM", fontSize = 14.sp, color = Color(0xFF444444))
+                    Text(
+                        "LKM",
+                        fontSize = 14.sp,
+                        color = if (hasRoot) Color(0xFF3C5A3C) else Color(0xFF7A4444)
+                    )
                 }
                 Icon(
                     Icons.Filled.CheckCircle,
