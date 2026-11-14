@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kernelsu.mgr.data.AppSettings
+import com.kernelsu.mgr.data.LoginStore
 import com.kernelsu.mgr.root.RootManager
 import com.kernelsu.mgr.ui.AccountScreen
 import com.kernelsu.mgr.ui.DeviceScreen
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppSettings.load(this)
+        LoginStore.load(this)
         setContent {
             AppRoot(this)
         }
@@ -59,7 +61,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppRoot(activity: Activity) {
     val context = LocalContext.current
-    var loggedIn by remember { mutableStateOf(false) }
+    // 启动即判断：满足自动登录条件就直接算已登录，避免登录页闪现
+    var loggedIn by remember { mutableStateOf(LoginStore.canAutoLogin) }
     var hasRoot by remember { mutableStateOf<Boolean?>(null) }
     var showNoRootDialog by remember { mutableStateOf(false) }
 
@@ -73,7 +76,10 @@ fun AppRoot(activity: Activity) {
 
     if (!loggedIn) {
         BlueGlassBackground {
-            LoginScreen(onLogin = { loggedIn = true })
+            LoginScreen(
+                onLogin = { loggedIn = true },
+                onAutoLogin = { loggedIn = true }
+            )
         }
         return
     }
@@ -100,8 +106,12 @@ fun AppRoot(activity: Activity) {
                         0 -> DeviceScreen(hasRoot == true)
                         1 -> ScriptScreen(hasRoot == true)
                         else -> AccountScreen(
-                            account = "donk",
-                            onExit = { activity.finish() },
+                            account = LoginStore.savedAccount.ifBlank { "donk" },
+                            onExit = {
+                                // 退出时清掉自动登录 → 下次启动回到登录页（记住的账号密码仍保留）
+                                LoginStore.clearAutoLogin(context)
+                                activity.finish()
+                            },
                             onSettingsChanged = { AppSettings.save(context) }
                         )
                     }
