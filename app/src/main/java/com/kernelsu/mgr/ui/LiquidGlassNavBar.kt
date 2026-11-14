@@ -170,10 +170,7 @@ fun LiquidGlassNavBar(
                         Modifier
                             .width(slotWidth)
                             .fillMaxHeight()
-                            .clickable(
-                                interactionSource = null,
-                                indication = null
-                            ) { onSelect(index) },
+                            .clickable { onSelect(index) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {

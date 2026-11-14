@@ -32,10 +32,9 @@ val AccentBlue: Color get() = AppSettings.accent
 val GlassBorder: Color get() = AppSettings.accentBorder
 
 /**
- * 玻璃卡片基础底色：低不透明度白色叠加，
- * 配合下方的模糊层形成"液态玻璃"质感。
+ * 兼容旧引用：玻璃卡片底色（已改名，避免与 GlassCard() 函数冲突）
  */
-val GlassCard: Color get() = Color(0x1Affffff)
+val GlassCardColor: Color get() = Color(0x1Affffff)
 
 /** 全局动画时长换算：AppSettings.animScale 为 0 时直接返回 0（关动画） */
 fun animDuration(baseMs: Int): Int = (baseMs * AppSettings.animScale).toInt().coerceAtLeast(0)
