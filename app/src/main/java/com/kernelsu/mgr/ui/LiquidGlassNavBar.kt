@@ -244,7 +244,7 @@ fun LiquidGlassNavBar(
                                                 ((base + dx) / slotWidthPx)
                                                     .coerceIn(0f, (count - 1).toFloat())
                                             dragPos = newPos
-                                            offset.snapTo(newPos)
+                                            scope.launch { offset.snapTo(newPos) }
                                             onDragProgress(newPos)
                                             change.consume()
                                         }
@@ -254,7 +254,7 @@ fun LiquidGlassNavBar(
                                             dragging = false
                                             val target =
                                                 dragPos.roundToInt().coerceIn(0, count - 1)
-                                            launch {
+                                            scope.launch {
                                                 offset.animateTo(
                                                     target.toFloat(),
                                                     spring(dampingRatio = 0.8f, stiffness = 620f)
