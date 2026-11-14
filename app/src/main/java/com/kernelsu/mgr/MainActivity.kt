@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Terminal
@@ -95,6 +96,7 @@ fun AppRoot(activity: Activity) {
 
     val navItems = listOf(
         NavItem("设备", Icons.Filled.Home),
+        NavItem("文件", Icons.Filled.Folder),
         NavItem("脚本", Icons.Filled.Terminal),
         NavItem("账户", Icons.Filled.Person)
     )
@@ -118,7 +120,8 @@ fun AppRoot(activity: Activity) {
                             hasRoot = hasRoot == true,
                             onRetryRoot = { rootRetry++ }
                         )
-                        1 -> ScriptScreen(hasRoot == true)
+                        1 -> FileBrowserScreen(hasRoot = hasRoot == true)
+                        2 -> ScriptScreen(hasRoot = hasRoot == true)
                         else -> AccountScreen(
                             account = LoginStore.savedAccount.ifBlank { "donk" },
                             onExit = {
