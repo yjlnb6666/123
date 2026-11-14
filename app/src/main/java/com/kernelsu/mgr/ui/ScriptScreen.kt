@@ -106,19 +106,6 @@ fun ScriptScreen(hasRoot: Boolean) {
         ScriptStore.save(context, list)
     }
 
-    val pickLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris: List<Uri> ->
-        handlePickedUris(uris)
-    }
-
-    // 备用：单文件选择（某些设备的"多选"实现有问题时用这个）
-    val pickSingleLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) handlePickedUris(listOf(uri))
-    }
-
     fun handlePickedUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val added = uris.mapNotNull { uri ->
@@ -142,6 +129,19 @@ fun ScriptScreen(hasRoot: Boolean) {
             return
         }
         persist((scripts + added).distinctBy { it.uriString })
+    }
+
+    val pickLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        handlePickedUris(uris)
+    }
+
+    // 备用：单文件选择（某些设备的"多选"实现有问题时用这个）
+    val pickSingleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) handlePickedUris(listOf(uri))
     }
 
     /** 真正执行（已通过安全校验） */

@@ -217,14 +217,14 @@ fun LiquidGlassNavBar(
                         var dragging = false
                         awaitPointerEventScope {
                             while (true) {
-                                val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                val down = awaitFirstDown(requireUnconsumed = false)
                                 base = selectedIndex.toFloat()
                                 acc = 0f
                                 dragging = false
 
                                 var finished = false
                                 while (!finished) {
-                                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    val event = awaitPointerEvent()
                                     val ch = event.changes.firstOrNull { it.id == down.id }
                                     if (ch == null) { finished = true; break }
 
