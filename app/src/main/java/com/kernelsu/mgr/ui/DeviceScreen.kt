@@ -2,6 +2,7 @@ package com.kernelsu.mgr.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,7 +47,7 @@ import com.kernelsu.mgr.ui.theme.StatusGreenText
 import com.kernelsu.mgr.ui.theme.TextSub
 
 @Composable
-fun DeviceScreen(hasRoot: Boolean) {
+fun DeviceScreen(hasRoot: Boolean, onRetryRoot: () -> Unit = {}) {
     val kernel = remember { DeviceInfoProvider.kernelVersion() }
     val model = remember { DeviceInfoProvider.deviceModel() }
     val fingerprint = remember { DeviceInfoProvider.systemFingerprint() }
@@ -112,6 +113,29 @@ fun DeviceScreen(hasRoot: Boolean) {
                     contentDescription = null,
                     tint = if (hasRoot) StatusGreenIcon else Color(0xFFE57373),
                     modifier = Modifier.size(64.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // 未授权时显示重试按钮（KSU 授权后无需重启 App）
+        if (!hasRoot) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0x33FF6B6B))
+                    .border(1.dp, Color(0x66FF8A80), RoundedCornerShape(14.dp))
+                    .clickable { onRetryRoot() }
+                    .padding(vertical = 11.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "已授权？点击重新检测",
+                    color = Color(0xFFFFD0C8),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }

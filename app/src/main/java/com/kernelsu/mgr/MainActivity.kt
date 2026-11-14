@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kernelsu.mgr.data.AppSettings
@@ -65,12 +66,19 @@ fun AppRoot(activity: Activity) {
     var loggedIn by remember { mutableStateOf(LoginStore.canAutoLogin) }
     var hasRoot by remember { mutableStateOf<Boolean?>(null) }
     var showNoRootDialog by remember { mutableStateOf(false) }
+    var rootRetry by remember { mutableStateOf(0) }
 
-    LaunchedEffect(loggedIn) {
+    LaunchedEffect(loggedIn, rootRetry) {
         if (loggedIn) {
-            val root = withContext(Dispatchers.IO) { RootManager.isRooted() }
+            // 首次检测失败时自动再试一次（KSU 授权弹窗有时需要时间）
+            var root = withContext(Dispatchers.IO) { RootManager.isRooted() }
+            if (!root) {
+                kotlinx.coroutines.delay(1200)
+                root = withContext(Dispatchers.IO) { RootManager.isRooted() }
+            }
             hasRoot = root
-            showNoRootDialog = !root
+            // 只在首次进入时弹窗，手动重试不重复打扰
+            if (rootRetry == 0) showNoRootDialog = !root
         }
     }
 
@@ -103,7 +111,10 @@ fun AppRoot(activity: Activity) {
             ) { page ->
                 Box(Modifier.fillMaxSize().padding(bottom = 84.dp)) {
                     when (page) {
-                        0 -> DeviceScreen(hasRoot == true)
+                        0 -> DeviceScreen(
+                            hasRoot = hasRoot == true,
+                            onRetryRoot = { rootRetry++ }
+                        )
                         1 -> ScriptScreen(hasRoot == true)
                         else -> AccountScreen(
                             account = LoginStore.savedAccount.ifBlank { "donk" },
@@ -118,7 +129,7 @@ fun AppRoot(activity: Activity) {
                 }
             }
 
-            // 底部渐变遮罩，让浮起的玻璃条有过渡层次
+            // 底部渐变遮罩（只做视觉，必须放行触摸，否则会挡住导航条）
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
@@ -129,6 +140,14 @@ fun AppRoot(activity: Activity) {
                             1f to AppSettings.bgColors.last().copy(alpha = 0.80f)
                         )
                     )
+                    .pointerInput(Unit) {
+                        // 不消费任何事件，全部透传给下层/上层
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent()
+                            }
+                        }
+                    }
             )
 
             // 液态玻璃底部导航（浮在内容之上）
@@ -136,7 +155,11 @@ fun AppRoot(activity: Activity) {
                 items = navItems,
                 selectedIndex = pagerState.currentPage,
                 onSelect = { index ->
-                    scope.launch { pagerState.animateScrollToPage(index) }
+                    scope.launch {
+                        if (pagerState.currentPage != index) {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
