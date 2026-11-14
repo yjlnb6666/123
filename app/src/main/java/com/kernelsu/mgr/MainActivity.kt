@@ -107,10 +107,12 @@ fun AppRoot(activity: Activity) {
             // 内容区：手指左右滑动切页
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 76.dp),
                 pageSpacing = 0.dp
             ) { page ->
-                Box(Modifier.fillMaxSize().padding(bottom = 84.dp)) {
+                Box(Modifier.fillMaxSize()) {
                     when (page) {
                         0 -> DeviceScreen(
                             hasRoot = hasRoot == true,
@@ -130,21 +132,8 @@ fun AppRoot(activity: Activity) {
                 }
             }
 
-            // 底部渐变遮罩：纯视觉，放在导航条「下层」，且不覆盖导航条区域
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(84.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Transparent,
-                                AppSettings.bgColors.last().copy(alpha = 0.9f)
-                            )
-                        )
-                    )
-            )
+            // 底部渐变遮罩已移除：它会覆盖导航条区域导致点击失效。
+            // 视觉上导航条自带玻璃底色，不需要额外遮罩。
 
             // 液态玻璃底部导航（浮在内容之上）
             LiquidGlassNavBar(

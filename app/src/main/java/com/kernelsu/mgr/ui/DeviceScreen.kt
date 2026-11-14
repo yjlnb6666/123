@@ -24,21 +24,33 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kernelsu.mgr.root.DeviceInfoProvider
+import com.kernelsu.mgr.root.RootManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.kernelsu.mgr.ui.theme.AccentBlue
 import com.kernelsu.mgr.ui.theme.GlassCard
 import com.kernelsu.mgr.ui.theme.StatusGreenBg
@@ -53,6 +65,10 @@ fun DeviceScreen(hasRoot: Boolean, onRetryRoot: () -> Unit = {}) {
     val fingerprint = remember { DeviceInfoProvider.systemFingerprint() }
     val selinux = remember { DeviceInfoProvider.selinux() }
     val seccomp = remember { DeviceInfoProvider.seccomp() }
+    var showDiag by remember { mutableStateOf(false) }
+    var diagText by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -121,22 +137,45 @@ fun DeviceScreen(hasRoot: Boolean, onRetryRoot: () -> Unit = {}) {
 
         // 未授权时显示重试按钮（KSU 授权后无需重启 App）
         if (!hasRoot) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0x33FF6B6B))
-                    .border(1.dp, Color(0x66FF8A80), RoundedCornerShape(14.dp))
-                    .clickable { onRetryRoot() }
-                    .padding(vertical = 11.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "已授权？点击重新检测",
-                    color = Color(0xFFFFD0C8),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+            Row(Modifier.fillMaxWidth()) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0x33FF6B6B))
+                        .border(1.dp, Color(0x66FF8A80), RoundedCornerShape(14.dp))
+                        .clickable { onRetryRoot() }
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "已授权？点击重新检测",
+                        color = Color(0xFFFFD0C8),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0x22FFFFFF))
+                        .border(1.dp, Color(0x44FFFFFF), RoundedCornerShape(14.dp))
+                        .clickable {
+                            showDiag = true
+                            diagText = "检测中…"
+                            scope.launch {
+                                val r = withContext(Dispatchers.IO) {
+                                    RootManager.diagnose()
+                                }
+                                diagText = r
+                            }
+                        }
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("诊断", color = Color(0xFFCFDCEE), fontSize = 13.sp)
+                }
             }
         }
 
@@ -148,6 +187,24 @@ fun DeviceScreen(hasRoot: Boolean, onRetryRoot: () -> Unit = {}) {
         InfoItem("系统指纹", fingerprint, Icons.Filled.Fingerprint)
         InfoItem("SELinux 状态", selinux, Icons.Filled.Security)
         InfoItem("Seccomp 状态", seccomp, Icons.Filled.FilterList)
+    }
+
+    if (showDiag) {
+        AlertDialog(
+            onDismissRequest = { showDiag = false },
+            title = { Text("Root 检测诊断") },
+            text = {
+                Text(
+                    diagText,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDiag = false }) { Text("关闭") }
+            }
+        )
     }
 }
 
