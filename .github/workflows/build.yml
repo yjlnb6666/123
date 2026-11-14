@@ -27,6 +27,25 @@ jobs:
         with:
           gradle-version: '8.5'
 
+      - name: Fetch proot binary (arm64-v8a)
+        run: |
+          set -e
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          # proot 静态编译版（termux/proot 仓库 releases）
+          URL="https://github.com/termux/proot/releases/download/v5.1.107-56/proot-static-aarch64"
+          echo "Downloading $URL"
+          if curl -fsSL --retry 3 --max-time 120 -o /tmp/proot "$URL"; then
+            chmod +x /tmp/proot
+            if file /tmp/proot | grep -qi "ELF 64-bit"; then
+              cp /tmp/proot app/src/main/jniLibs/arm64-v8a/libproot.so
+              echo "proot OK: $(stat -c%s app/src/main/jniLibs/arm64-v8a/libproot.so) bytes"
+            else
+              echo "not an ELF binary, skipping proot"
+            fi
+          else
+            echo "proot download failed, build will use fallback sandbox"
+          fi
+
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 

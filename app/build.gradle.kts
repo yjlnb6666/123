@@ -28,7 +28,16 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    packaging {
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+        jniLibs {
+            // proot 以 .so 形式打包，需要解压到 nativeLibraryDir 才能执行
+            useLegacyPackaging = true
+        }
+    }
+    androidResources {
+        noCompress += "so"
+    }
 }
 
 dependencies {
