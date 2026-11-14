@@ -27,23 +27,51 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Fetch proot binary (arm64-v8a)
+      - name: Build static proot for arm64 (NDK)
         run: |
-          set -e
-          mkdir -p app/src/main/jniLibs/arm64-v8a
-          # proot 静态编译版（termux/proot 仓库 releases）
-          URL="https://github.com/termux/proot/releases/download/v5.1.107-56/proot-static-aarch64"
-          echo "Downloading $URL"
-          if curl -fsSL --retry 3 --max-time 120 -o /tmp/proot "$URL"; then
-            chmod +x /tmp/proot
-            if file /tmp/proot | grep -qi "ELF 64-bit"; then
-              cp /tmp/proot app/src/main/jniLibs/arm64-v8a/libproot.so
-              echo "proot OK: $(stat -c%s app/src/main/jniLibs/arm64-v8a/libproot.so) bytes"
-            else
-              echo "not an ELF binary, skipping proot"
-            fi
+          set -x
+          OUT="$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$OUT"
+
+          # 1) 安装 Android NDK
+          NDK_VERSION="25.2.9519653"
+          echo "ndk;${NDK_VERSION}" > /tmp/ndk-pkg
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;${NDK_VERSION}" > /dev/null 2>&1 \
+            || $ANDROID_HOME/tools/bin/sdkmanager --install "ndk;${NDK_VERSION}" > /dev/null 2>&1 || true
+          NDK="$ANDROID_HOME/ndk/${NDK_VERSION}"
+          if [ ! -d "$NDK" ]; then
+            NDK=$(ls -d $ANDROID_HOME/ndk/* 2>/dev/null | head -1)
+          fi
+          echo "NDK=$NDK"
+          ls "$NDK/toolchains/llvm/prebuilt/" 2>/dev/null
+
+          # 2) 拉取 proot 源码
+          cd /tmp
+          rm -rf proot-src
+          git clone --depth 1 https://github.com/proot-me/proot.git proot-src || exit 0
+          cd proot-src/src
+
+          # 3) 用 NDK clang 静态编译（关闭 talloc 依赖）
+          TC=$(echo "$NDK"/toolchains/llvm/prebuilt/*)
+          CC="$TC/bin/aarch64-linux-android29-clang"
+          echo "CC=$CC"
+          $CC --version | head -2
+
+          make -j4 \
+            CC="$CC" \
+            LD="$CC" \
+            CFLAGS="-static -O2 -D__ANDROID_API__=29 -I. -I$TC/sysroot/usr/include" \
+            LDFLAGS="-static" \
+            proot 2>&1 | tail -30 || true
+
+          if [ -f proot ]; then
+            cp proot "$OUT/libproot.so"
+            chmod +x "$OUT/libproot.so"
+            echo "=== proot built: $(stat -c%s $OUT/libproot.so) bytes ==="
+            $TC/bin/llvm-readelf -d "$OUT/libproot.so" 2>/dev/null | head -10 || true
           else
-            echo "proot download failed, build will use fallback sandbox"
+            echo "=== proot build FAILED, will use fallback sandbox ==="
+            ls -la
           fi
 
       - name: Build Debug APK
