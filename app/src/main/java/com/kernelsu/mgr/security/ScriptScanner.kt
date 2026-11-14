@@ -82,17 +82,12 @@ object ScriptScanner {
             "擦除分区数据"
         ),
         Triple(
-            Regex("""\bmagisk\b|\bksud\b|\bkernelsu\b""", RegexOption.IGNORE_CASE),
+            Regex("""\bmagisk\b|\bksud\b""", RegexOption.IGNORE_CASE),
             "magisk/ksud",
             "调用 root 管理工具，可能试图提权逃逸"
         ),
         Triple(
-            Regex("""(^|[\s;|&(])su(\s|$|;|&|\|)""", RegexOption.MULTILINE),
-            "su",
-            "调用 su 提权，可能逃出沙盒范围"
-        ),
-        Triple(
-            Regex("""\breboot\s+(recovery|bootloader)\b""", RegexOption.IGNORE_CASE),
+            Regex("""\breboot\s+recovery\b|\breboot\s+bootloader\b""", RegexOption.IGNORE_CASE),
             "reboot 特殊模式",
             "重启进入 recovery/bootloader，风险极高"
         ),
@@ -105,11 +100,52 @@ object ScriptScanner {
             Regex("""\bsetprop\s+ro\.(secure|debuggable|adbd)\b""", RegexOption.IGNORE_CASE),
             "setprop ro.*",
             "修改系统只读属性"
+        ),
+        // ===== 精确拦截：覆写 / 删除系统分区（这才是真正会变砖的）=====
+        Triple(
+            Regex("""\bdd\b[^\n]*\bof\s*=\s*(/dev/|/system|/vendor|/boot|/recovery|/data/adb|/metadata)""", RegexOption.IGNORE_CASE),
+            "dd 覆写系统区域",
+            "向系统分区/设备节点写入，会破坏系统"
+        ),
+        Triple(
+            Regex("""\brm\s+-[rR]{0,2}f?[rRf]*\s+(/system|/vendor|/boot|/recovery|/data/adb|/metadata|/dev/block)(\s|/|$)""", RegexOption.IGNORE_CASE),
+            "删除系统目录",
+            "递归删除系统分区内容"
+        ),
+        Triple(
+            Regex("""\brm\s+-[rRf]{1,3}\s+/(\s|$)""", RegexOption.IGNORE_CASE),
+            "rm -rf /",
+            "删除根目录"
+        ),
+        Triple(
+            Regex("""\bcp\b[^\n]*\s(/system|/vendor|/boot|/recovery)/[^\n]*""", RegexOption.IGNORE_CASE),
+            "写入系统分区",
+            "复制文件覆盖系统分区内容"
+        ),
+        Triple(
+            Regex(""">\s*(/system|/vendor|/boot|/recovery|/dev/block)/""", RegexOption.IGNORE_CASE),
+            "重定向写入系统分区",
+            "通过 > 覆盖系统分区文件"
+        ),
+        Triple(
+            Regex("""\btruncate\b[^\n]*(/system|/vendor|/boot|/dev/block)""", RegexOption.IGNORE_CASE),
+            "truncate 系统文件",
+            "截断系统文件大小，破坏系统"
+        ),
+        Triple(
+            Regex("""\bchmod\s+[0-7]{3,4}\s+(/system|/vendor|/boot)(\s|/|$)""", RegexOption.IGNORE_CASE),
+            "修改系统分区权限",
+            "改动系统分区权限，可能导致无法启动"
         )
     )
 
     /** 警告级：提醒但允许执行 */
     private val WARN_RULES: List<Triple<Regex, String, String>> = listOf(
+        Triple(
+            Regex("""(^|[\s;|&(])su(\s|$|;|&|\|)""", RegexOption.MULTILINE),
+            "su",
+            "调用 su 提权（允许，但会实际以 root 执行）"
+        ),
         Triple(Regex("""\breboot\b""", RegexOption.IGNORE_CASE), "reboot", "重启设备"),
         Triple(Regex("""\bpoweroff\b|\bshutdown\b""", RegexOption.IGNORE_CASE), "poweroff", "关机"),
         Triple(Regex("""\bmount\s+-o\s+rw\b""", RegexOption.IGNORE_CASE), "mount -o rw", "以读写方式重挂载"),
@@ -117,9 +153,13 @@ object ScriptScanner {
         Triple(Regex("""\biptables\b|\bnft\b""", RegexOption.IGNORE_CASE), "iptables", "修改防火墙规则"),
         Triple(Regex("""\bcurl\b|\bwget\b""", RegexOption.IGNORE_CASE), "curl/wget", "联网下载内容"),
         Triple(Regex("""\beval\b""", RegexOption.IGNORE_CASE), "eval", "动态执行代码，可被用于混淆"),
-        Triple(Regex("""/system/|\s/system\b""", RegexOption.IGNORE_CASE), "/system 写入", "尝试修改系统分区"),
         Triple(Regex("""/data/data/""", RegexOption.IGNORE_CASE), "访问其他应用数据", "读取其他 app 私有数据"),
-        Triple(Regex("""\bcrontab\b|\binit\.d\b""", RegexOption.IGNORE_CASE), "自启动挂载", "修改开机启动项")
+        Triple(Regex("""\bcrontab\b|\binit\.d\b""", RegexOption.IGNORE_CASE), "自启动挂载", "修改开机启动项"),
+        Triple(
+            Regex("""\bsetprop\b""", RegexOption.IGNORE_CASE),
+            "setprop",
+            "修改系统属性"
+        )
     )
 
     /**

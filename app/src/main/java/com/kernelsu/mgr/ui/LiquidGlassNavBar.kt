@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -209,47 +210,68 @@ fun LiquidGlassNavBar(
                 }
             }
 
-            // ---- 手势层（放在最上面，捕获拖动/点击）----
+            // ---- 手势层（单一 pointerInput 统一处理拖动 + 点击，避免多手势竞争）----
             Box(
                 Modifier
                     .fillMaxWidth()
                     .fillMaxHeight()
                     .pointerInput(count, slotWidthPx) {
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                dragging = true
-                                dragPos = offset.value
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                val delta = dragAmount / slotWidthPx
-                                dragPos = (dragPos + delta).coerceIn(0f, (count - 1).toFloat())
-                                scope.launch { offset.snapTo(dragPos) }
-                                onDragProgress(dragPos)
-                            },
-                            onDragEnd = {
-                                dragging = false
-                                val target = dragPos.roundToInt().coerceIn(0, count - 1)
-                                scope.launch {
-                                    offset.animateTo(
-                                        target.toFloat(),
-                                        spring(dampingRatio = 0.8f, stiffness = 620f)
-                                    )
-                                }
-                                if (target != selectedIndex) onSelect(target)
-                            },
-                            onDragCancel = {
-                                dragging = false
-                                scope.launch {
-                                    offset.animateTo(selectedIndex.toFloat(), tween(180))
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val startX = down.position.x
+                                val startOffset = offset.value
+                                var isDrag = false
+                                var moved = false
+                                down.consume()
+
+                                // 跟踪本次触摸
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                                    if (change.pressed) {
+                                        val dx = change.position.x - startX
+                                        if (!isDrag && kotlin.math.abs(dx) > 12f) {
+                                            isDrag = true
+                                            moved = true
+                                            dragging = true
+                                            dragPos = startOffset
+                                        }
+                                        if (isDrag) {
+                                            val base = startOffset * slotWidthPx
+                                            val newPos =
+                                                ((base + dx) / slotWidthPx)
+                                                    .coerceIn(0f, (count - 1).toFloat())
+                                            dragPos = newPos
+                                            offset.snapTo(newPos)
+                                            onDragProgress(newPos)
+                                            change.consume()
+                                        }
+                                    } else {
+                                        // 手指抬起
+                                        if (isDrag) {
+                                            dragging = false
+                                            val target =
+                                                dragPos.roundToInt().coerceIn(0, count - 1)
+                                            launch {
+                                                offset.animateTo(
+                                                    target.toFloat(),
+                                                    spring(dampingRatio = 0.8f, stiffness = 620f)
+                                                )
+                                            }
+                                            if (target != selectedIndex) onSelect(target)
+                                        } else if (!moved) {
+                                            // 认定为点击
+                                            val idx =
+                                                (startX / slotWidthPx).toInt()
+                                                    .coerceIn(0, count - 1)
+                                            if (idx != selectedIndex) onSelect(idx)
+                                        }
+                                        break
+                                    }
                                 }
                             }
-                        )
-                    }
-                    .pointerInput(count, slotWidthPx) {
-                        detectTapGestures { tap ->
-                            val idx = (tap.x / slotWidthPx).toInt().coerceIn(0, count - 1)
-                            if (idx != selectedIndex) onSelect(idx)
                         }
                     }
             )

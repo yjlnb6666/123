@@ -116,12 +116,16 @@ fun ScriptScreen(hasRoot: Boolean) {
     fun execute(item: ScriptItem, content: String) {
         running = true
         showOutput = true
-        output = "▶ ${item.displayName}\n正在沙盒中执行…"
+        output = "▶ ${item.displayName}\n正在执行…"
         scope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 if (content.isBlank()) {
                     SandboxRunner.Outcome(-1, "❌ 脚本内容为空或无法读取", "-")
+                } else if (hasRoot) {
+                    // 有 root：已通过分区保护扫描，用真实 root 执行（su 可用）
+                    SandboxRunner.runAsRealRoot(context, content)
                 } else {
+                    // 无 root：降级沙盒
                     SandboxRunner.run(context, content)
                 }
             }
@@ -150,18 +154,15 @@ fun ScriptScreen(hasRoot: Boolean) {
 
             val newHash = ScriptStore.hash(content)
 
-            // 已在信任区，且内容未变 → 跳过扫描直接执行
-            if (item.trusted && item.contentHash == newHash) {
+            // 已在信任区 → 直接执行（如果 hash 为空说明是手动加入的，补上 hash 即可）
+            if (item.trusted) {
+                if (item.contentHash.isEmpty()) {
+                    persist(scripts.map {
+                        if (it.id == item.id) it.copy(contentHash = newHash) else it
+                    })
+                }
                 execute(item, content)
                 return@launch
-            }
-
-            // 内容变了，信任失效
-            if (item.trusted && item.contentHash != newHash) {
-                val reset = scripts.map {
-                    if (it.id == item.id) it.copy(trusted = false, contentHash = "") else it
-                }
-                persist(reset)
             }
 
             val result = withContext(Dispatchers.IO) { ScriptScanner.scan(content) }
@@ -200,7 +201,7 @@ fun ScriptScreen(hasRoot: Boolean) {
         Text("脚本管理", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
-            "共 ${scripts.size} 个脚本 · 信任区 ${scripts.count { it.trusted }} 个 · 全部在沙盒中运行",
+            "共 ${scripts.size} 个 · 信任 ${scripts.count { it.trusted }} 个 · ${if (hasRoot) "Root 模式（拦截分区操作）" else "沙盒模式（无 Root）"}",
             fontSize = 12.sp,
             color = TextMuted
         )
@@ -248,13 +249,28 @@ fun ScriptScreen(hasRoot: Boolean) {
                         },
                         onDelete = { persist(scripts.filterNot { it.id == item.id }) },
                         onToggleTrust = {
-                            val updated = scripts.map {
-                                if (it.id == item.id) it.copy(
-                                    trusted = !it.trusted,
-                                    contentHash = if (it.trusted) "" else it.contentHash
-                                ) else it
+                            val target = item
+                            val newTrusted = !item.trusted
+                            if (newTrusted) {
+                                // 加入信任区：同步记录当前内容 hash
+                                scope.launch {
+                                    val content = withContext(Dispatchers.IO) {
+                                        ScriptStore.readScript(context, target.uriString)
+                                    }
+                                    val h = ScriptStore.hash(content)
+                                    persist(scripts.map {
+                                        if (it.id == target.id)
+                                            it.copy(trusted = true, contentHash = h, lastScan = "TRUSTED")
+                                        else it
+                                    })
+                                }
+                            } else {
+                                persist(scripts.map {
+                                    if (it.id == target.id)
+                                        it.copy(trusted = false, contentHash = "")
+                                    else it
+                                })
                             }
-                            persist(updated)
                         },
                         onPlay = { requestRun(item) }
                     )
@@ -375,7 +391,8 @@ fun ScriptScreen(hasRoot: Boolean) {
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "脚本将在沙盒中运行，不会伤到真机。是否继续？",
+                        if (hasRoot) "脚本将以真实 Root 执行（系统分区写入已被保护）。是否继续？"
+                        else "脚本将在沙盒中运行，不会伤到真机。是否继续？",
                         color = Color(0xFFA5D6A7),
                         fontSize = 12.sp
                     )
@@ -455,7 +472,7 @@ private fun ScriptRow(
 
             Spacer(Modifier.height(8.dp))
 
-            // 信任状态胶囊
+            // 信任状态条：仅展示状态，不再可点击（避免误触移除信任）
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -473,7 +490,6 @@ private fun ScriptRow(
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
-                    .clickable { onToggleTrust() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -485,19 +501,31 @@ private fun ScriptRow(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (item.trusted) "信任区 · 点击移出" else "未信任 · 点击加入信任区",
+                    if (item.trusted) "信任区 · 可直接执行" else "未信任 · 首次执行需扫描",
                     color = if (item.trusted) Color(0xFF8BE28B) else TextMuted,
-                    fontSize = 11.sp
+                    fontSize = 11.sp,
+                    modifier = Modifier.weight(1f)
                 )
                 if (item.lastScan == "DANGER") {
-                    Spacer(Modifier.width(8.dp))
                     Icon(
                         Icons.Filled.Warning,
                         contentDescription = null,
                         tint = Color(0xFFFF8A80),
                         modifier = Modifier.size(14.dp)
                     )
+                    Spacer(Modifier.width(4.dp))
                 }
+                // 独立的小按钮：手动切换信任状态
+                Text(
+                    if (item.trusted) "移出" else "信任",
+                    color = if (item.trusted) Color(0xFFFFB0A0) else StatusGreenIcon,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onToggleTrust() }
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                )
             }
         }
     }

@@ -86,6 +86,44 @@ object SandboxRunner {
     }
 
     /**
+     * 以真实 root 执行脚本（仅在脚本通过安全检查、且确实需要 root 时使用）。
+     *
+     * 安全前提：调用方必须先通过 ScriptScanner 扫描，确认没有覆写/删除系统分区的操作。
+     */
+    fun runAsRealRoot(context: Context, scriptContent: String): Outcome {
+        val work = workDir(context)
+        val scriptFile = File(work, "root_entry.sh").apply {
+            writeText("#!/system/bin/sh\n" + scriptContent)
+            setExecutable(true, false)
+        }
+        return try {
+            val proc = ProcessBuilder("su", "-c", "sh ${scriptFile.absolutePath}")
+                .redirectErrorStream(true)
+                .start()
+
+            val sb = StringBuilder()
+            val reader = Thread {
+                runCatching {
+                    proc.inputStream.bufferedReader().forEachLine { line ->
+                        if (sb.length < 200_000) sb.appendLine(line)
+                    }
+                }
+            }
+            reader.start()
+
+            val finished = proc.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)
+            if (!finished) {
+                proc.destroyForcibly()
+                return Outcome(-1, "⏱ 执行超时（120 秒），已终止\n$sb", "真实 Root")
+            }
+            reader.join(2000)
+            Outcome(proc.exitValue(), sb.toString().ifBlank { "（无输出）" }, "真实 Root（已通过分区保护扫描）")
+        } catch (e: Exception) {
+            Outcome(-1, "❌ Root 执行失败：${e.message}", "真实 Root")
+        }
+    }
+
+    /**
      * 在沙盒中执行脚本。
      *
      * @param scriptContent 脚本正文
