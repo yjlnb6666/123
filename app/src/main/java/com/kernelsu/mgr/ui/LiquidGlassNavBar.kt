@@ -1,12 +1,12 @@
 package com.kernelsu.mgr.ui
 
 import android.os.Build
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,12 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +36,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -47,8 +43,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kernelsu.mgr.data.AppSettings
-import com.kernelsu.mgr.ui.theme.animDuration
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 data class NavItem(
@@ -57,42 +51,40 @@ data class NavItem(
 )
 
 /**
- * KU 风格的液态玻璃底部导航条。
+ * KU 风格液态玻璃底部导航条（稳定版）。
  *
  * 交互：
- * - 手指在导航条上左右拖动 → 玻璃滑块跟手移动，页面也轻微跟手
- * - 松手后吸附到最近的一项并触发切换
- * - 也可以直接点击某项
+ * - 点击任一项 → 切换（最可靠）
+ * - 在导航条上左右拖动 → 滑块跟手，松手吸附并切换
  *
- * 视觉：
- * - 外层：圆角胶囊 + 半透明模糊底 + 顶部高光 + 渐变描边
- * - 内层：跟随移动的高亮滑块（强调色 + 内部高光）
+ * 关键点：整个导航条只有【一个】pointerInput，
+ * 内部用 detectTapGestures + detectHorizontalDragGestures 分别挂载，
+ * 并且拖动层放在点击层之上、高度受限，避免互相吞事件。
  */
 @Composable
 fun LiquidGlassNavBar(
     items: List<NavItem>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    onDragProgress: (Float) -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
-    val count = items.size
+    val count = items.size.coerceAtLeast(1)
     val accent = AppSettings.accent
     val density = LocalDensity.current
 
-    // 滑块位置（单位为“项”，0f .. count-1f）
-    val offset = remember { Animatable(selectedIndex.toFloat()) }
-    val scope = rememberCoroutineScope()
+    // 拖动过程中的临时位置（null 表示未拖动）
+    var dragPos by remember { mutableFloatStateOf(-1f) }
 
-    var dragging by remember { mutableStateOf(false) }
-    var dragPos by remember { mutableFloatStateOf(selectedIndex.toFloat()) }
-
-    // 外部切换（点击/滑页）时同步滑块
-    LaunchedEffect(selectedIndex) {
-        if (!dragging) {
-            offset.animateTo(selectedIndex.toFloat(), tween(animDuration(200)))
-        }
-    }
+    // 目标位置：拖动中跟手，否则跟随 selectedIndex
+    val targetPos = if (dragPos >= 0f) dragPos else selectedIndex.toFloat()
+    val animatedPos by animateFloatAsState(
+        targetValue = targetPos,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "knob"
+    )
 
     Box(
         modifier = modifier
@@ -110,7 +102,6 @@ fun LiquidGlassNavBar(
             val totalWidthPx = with(density) { totalWidth.toPx() }
             val slotWidth = totalWidth / count
             val slotWidthPx = totalWidthPx / count
-            // 滑块宽度比格子略窄，留出边距
             val knobWidth = slotWidth - 10.dp
 
             // ---- 玻璃底座 ----
@@ -130,7 +121,7 @@ fun LiquidGlassNavBar(
                         )
                     )
             )
-            // 顶部高光 + 渐变边框
+            // 顶部高光 + 边框
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -150,10 +141,9 @@ fun LiquidGlassNavBar(
             )
 
             // ---- 滑块 ----
-            val knobLeftDp = slotWidth * offset.value + 5.dp
             Box(
                 Modifier
-                    .offset(x = knobLeftDp, y = 5.dp)
+                    .offset(x = slotWidth * animatedPos + 5.dp, y = 5.dp)
                     .width(knobWidth)
                     .fillMaxHeight()
                     .padding(vertical = 5.dp)
@@ -161,8 +151,8 @@ fun LiquidGlassNavBar(
                     .background(
                         Brush.verticalGradient(
                             listOf(
-                                accent.copy(alpha = 0.55f),
-                                accent.copy(alpha = 0.28f)
+                                accent.copy(alpha = 0.58f),
+                                accent.copy(alpha = 0.30f)
                             )
                         )
                     )
@@ -180,7 +170,7 @@ fun LiquidGlassNavBar(
                     )
             )
 
-            // ---- 图标 + 文字 ----
+            // ---- 图标 + 文字（可点击）----
             Row(
                 Modifier.fillMaxWidth().fillMaxHeight(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -190,7 +180,12 @@ fun LiquidGlassNavBar(
                     val selected = index == selectedIndex
                     val tint = if (selected) Color.White else Color(0xFF9FB0CC)
                     Column(
-                        Modifier.width(slotWidth),
+                        Modifier
+                            .width(slotWidth)
+                            .fillMaxHeight()
+                            .pointerInput(index) {
+                                detectTapGestures(onTap = { onSelect(index) })
+                            },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
@@ -210,65 +205,48 @@ fun LiquidGlassNavBar(
                 }
             }
 
-            // ---- 手势层（单一 pointerInput 统一处理拖动 + 点击，避免多手势竞争）----
+            // ---- 拖动层（只在水平位移超阈值时才消费，不影响点击）----
             Box(
                 Modifier
                     .fillMaxWidth()
                     .fillMaxHeight()
                     .pointerInput(count, slotWidthPx) {
+                        if (slotWidthPx <= 0f) return@pointerInput
+                        var base = 0f
+                        var acc = 0f
+                        var dragging = false
                         awaitPointerEventScope {
                             while (true) {
-                                val down = awaitFirstDown(requireUnconsumed = false)
-                                val startX = down.position.x
-                                val startOffset = offset.value
-                                var isDrag = false
-                                var moved = false
-                                down.consume()
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                base = selectedIndex.toFloat()
+                                acc = 0f
+                                dragging = false
 
-                                // 跟踪本次触摸
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                var finished = false
+                                while (!finished) {
+                                    val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    val ch = event.changes.firstOrNull { it.id == down.id }
+                                    if (ch == null) { finished = true; break }
 
-                                    if (change.pressed) {
-                                        val dx = change.position.x - startX
-                                        if (!isDrag && kotlin.math.abs(dx) > 12f) {
-                                            isDrag = true
-                                            moved = true
-                                            dragging = true
-                                            dragPos = startOffset
-                                        }
-                                        if (isDrag) {
-                                            val base = startOffset * slotWidthPx
-                                            val newPos =
-                                                ((base + dx) / slotWidthPx)
-                                                    .coerceIn(0f, (count - 1).toFloat())
-                                            dragPos = newPos
-                                            scope.launch { offset.snapTo(newPos) }
-                                            onDragProgress(newPos)
-                                            change.consume()
-                                        }
-                                    } else {
-                                        // 手指抬起
-                                        if (isDrag) {
-                                            dragging = false
-                                            val target =
-                                                dragPos.roundToInt().coerceIn(0, count - 1)
-                                            scope.launch {
-                                                offset.animateTo(
-                                                    target.toFloat(),
-                                                    spring(dampingRatio = 0.8f, stiffness = 620f)
-                                                )
-                                            }
+                                    if (!ch.pressed) {
+                                        if (dragging) {
+                                            val target = (dragPos.takeIf { it >= 0f } ?: base)
+                                                .roundToInt().coerceIn(0, count - 1)
+                                            dragPos = -1f
                                             if (target != selectedIndex) onSelect(target)
-                                        } else if (!moved) {
-                                            // 认定为点击
-                                            val idx =
-                                                (startX / slotWidthPx).toInt()
-                                                    .coerceIn(0, count - 1)
-                                            if (idx != selectedIndex) onSelect(idx)
                                         }
-                                        break
+                                        finished = true
+                                    } else {
+                                        acc += ch.position.x - ch.previousPosition.x
+                                        if (!dragging && kotlin.math.abs(acc) > 14f) {
+                                            dragging = true
+                                        }
+                                        if (dragging) {
+                                            val pos = (base + acc / slotWidthPx)
+                                                .coerceIn(0f, (count - 1).toFloat())
+                                            dragPos = pos
+                                            ch.consume()
+                                        }
                                     }
                                 }
                             }

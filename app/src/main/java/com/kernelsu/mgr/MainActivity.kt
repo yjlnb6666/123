@@ -8,6 +8,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -30,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.kernelsu.mgr.data.AppSettings
@@ -129,25 +130,20 @@ fun AppRoot(activity: Activity) {
                 }
             }
 
-            // 底部渐变遮罩（只做视觉，必须放行触摸，否则会挡住导航条）
+            // 底部渐变遮罩：纯视觉，放在导航条「下层」，且不覆盖导航条区域
             Box(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .height(84.dp)
                     .background(
                         Brush.verticalGradient(
-                            0.80f to Color.Transparent,
-                            1f to AppSettings.bgColors.last().copy(alpha = 0.80f)
+                            listOf(
+                                Color.Transparent,
+                                AppSettings.bgColors.last().copy(alpha = 0.9f)
+                            )
                         )
                     )
-                    .pointerInput(Unit) {
-                        // 不消费任何事件，全部透传给下层/上层
-                        awaitPointerEventScope {
-                            while (true) {
-                                awaitPointerEvent()
-                            }
-                        }
-                    }
             )
 
             // 液态玻璃底部导航（浮在内容之上）

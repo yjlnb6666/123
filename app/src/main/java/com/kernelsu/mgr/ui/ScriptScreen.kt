@@ -68,12 +68,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** 从 SAF Uri 查询真实文件名 */
+private fun queryDisplayName(context: android.content.Context, uri: Uri): String? {
+    return try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
 @Composable
 fun ScriptScreen(hasRoot: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val accent = AppSettings.accent
-
     var scripts by remember { mutableStateOf(ScriptStore.load(context).toList()) }
     var output by remember { mutableStateOf("") }
     var running by remember { mutableStateOf(false) }
@@ -98,18 +109,39 @@ fun ScriptScreen(hasRoot: Boolean) {
     val pickLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) {
-            val added = uris.map {
-                ScriptStore.takePermission(context, it)
-                val name = it.lastPathSegment?.substringAfterLast("/") ?: "脚本"
+        handlePickedUris(uris)
+    }
+
+    // 备用：单文件选择（某些设备的"多选"实现有问题时用这个）
+    val pickSingleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) handlePickedUris(listOf(uri))
+    }
+
+    fun handlePickedUris(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val added = uris.mapNotNull { uri ->
+            try {
+                ScriptStore.takePermission(context, uri)
+                val name = queryDisplayName(context, uri)
+                    ?: uri.lastPathSegment?.substringAfterLast("/")?.substringAfterLast(":")
+                    ?: "脚本"
                 ScriptItem(
-                    id = it.toString().hashCode().toString(),
-                    uriString = it.toString(),
+                    id = uri.toString().hashCode().toString(),
+                    uriString = uri.toString(),
                     displayName = name
                 )
+            } catch (e: Exception) {
+                null
             }
-            persist((scripts + added).distinctBy { it.uriString })
         }
+        if (added.isEmpty()) {
+            output = "❌ 无法读取所选文件，请换一个文件管理器再试"
+            showOutput = true
+            return
+        }
+        persist((scripts + added).distinctBy { it.uriString })
     }
 
     /** 真正执行（已通过安全校验） */
@@ -208,13 +240,44 @@ fun ScriptScreen(hasRoot: Boolean) {
         Spacer(Modifier.height(12.dp))
 
         Button(
-            onClick = { pickLauncher.launch(arrayOf("*/*")) },
+            onClick = {
+                try {
+                    pickLauncher.launch(arrayOf("*/*"))
+                } catch (e: Exception) {
+                    try {
+                        pickSingleLauncher.launch(arrayOf("*/*"))
+                    } catch (e2: Exception) {
+                        output = "❌ 无法打开文件选择器：${e2.message}"
+                        showOutput = true
+                    }
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(46.dp),
             colors = ButtonDefaults.buttonColors(containerColor = accent)
         ) {
             Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White)
             Spacer(Modifier.width(8.dp))
             Text("添加脚本（可多选）", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // 备用入口：逐个选文件，兼容多选不可用的设备
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                .clickable { pickSingleLauncher.launch(arrayOf("*/*")) }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "选不了文件？点这里逐个添加",
+                color = accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
         Spacer(Modifier.height(12.dp))
 
