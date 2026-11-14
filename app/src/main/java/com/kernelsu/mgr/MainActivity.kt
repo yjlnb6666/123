@@ -40,6 +40,7 @@ import com.kernelsu.mgr.data.LoginStore
 import com.kernelsu.mgr.root.RootManager
 import com.kernelsu.mgr.ui.AccountScreen
 import com.kernelsu.mgr.ui.DeviceScreen
+import com.kernelsu.mgr.ui.FileBrowserScreen
 import com.kernelsu.mgr.ui.LiquidGlassNavBar
 import com.kernelsu.mgr.ui.LoginScreen
 import com.kernelsu.mgr.ui.NavItem
